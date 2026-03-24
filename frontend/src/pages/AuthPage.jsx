@@ -1,115 +1,100 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React from "react";
+import { useState } from "react";
 import { toast } from "react-hot-toast";
-import { supabase } from "../lib/supabase";
-import { apiFetch } from "../lib/api";
-import { useAuthCtx } from "../context/AuthContext";
+import { useNavigate } from "react-router-dom";
+import { apiFetch, refreshMe, setSessionFromAuthResponse } from "../lib/api";
 
-export default function AuthPage({ onboardingOnly = false }) {
+export default function AuthPage() {
   const navigate = useNavigate();
-  const { profile, refreshBackendUser } = useAuthCtx();
-
-  const [mode, setMode] = useState("signin");
-  const [role, setRole] = useState(profile?.role || "worker");
-  const [email, setEmail] = useState(profile?.email || "");
+  const [mode, setMode] = useState("login");
+  const [role, setRole] = useState("worker");
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState(profile?.full_name || "");
   const [loading, setLoading] = useState(false);
-
-  const title = useMemo(() => {
-    if (onboardingOnly) return "Complete profile setup";
-    return mode === "signin" ? "Sign in" : "Create account";
-  }, [mode, onboardingOnly]);
 
   const submit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      if (!onboardingOnly && mode === "signup") {
-        const { error } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
-        const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-        if (signInError) throw signInError;
-      } else if (!onboardingOnly) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-      }
-
+      const auth = await apiFetch(mode === "login" ? "/login" : "/register", {
+        method: "POST",
+        body: JSON.stringify({ email, password }),
+      });
+      setSessionFromAuthResponse(auth);
       await apiFetch("/profiles/upsert", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           role,
-          full_name: fullName,
-          status: "offline",
-          availability: "available",
-          skills: profile?.skills || [],
-          experience_years: profile?.experience_years || 0,
-          bio: profile?.bio || "",
-          location: profile?.location || "",
+          full_name: fullName || email.split("@")[0],
+          skills: [],
+          city: null,
+          state: null,
+          location: null,
+          address_text: null,
+          lat: null,
+          lng: null,
+          is_location_live: false,
+          service_radius_km: 5,
+          availability_status: "available",
+          experience_years: 0,
+          hourly_rate: 0,
         }),
       });
-
-      await refreshBackendUser();
-      toast.success("Profile saved");
-
-      if (role === "worker") {
-        if (!profile?.face_registered) navigate("/face-auth");
-        else navigate("/worker/profile");
-      } else {
-        navigate("/user/home");
-      }
+      await refreshMe();
+      toast.success(mode === "login" ? "Login successful" : "Registration successful");
+      navigate(role === "worker" ? "/worker/face" : "/user/profile");
     } catch (error) {
-      toast.error(error.message || "Something went wrong");
+      toast.error(error.message || "Authentication failed");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={{ maxWidth: 520, margin: "48px auto", background: "#fff", borderRadius: 22, padding: 28, boxShadow: "0 10px 30px rgba(17,24,39,.08)" }}>
-      <h1 style={{ marginTop: 0 }}>{title}</h1>
-      <p style={{ color: "#6b7280" }}>Choose your role, authenticate, then continue into the right flow.</p>
-
-      <form onSubmit={submit} style={{ display: "grid", gap: 14 }}>
-        <label>
-          Role
-          <select value={role} onChange={(e) => setRole(e.target.value)} style={{ width: "100%", padding: 12, marginTop: 6 }}>
-            <option value="worker">Worker</option>
-            <option value="user">User</option>
-          </select>
-        </label>
-
-        <label>
-          Full name
-          <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Your name" style={{ width: "100%", padding: 12, marginTop: 6 }} />
-        </label>
-
-        {!onboardingOnly && (
-          <>
-            <label>
-              Email
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" style={{ width: "100%", padding: 12, marginTop: 6 }} />
-            </label>
-            <label>
-              Password
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" style={{ width: "100%", padding: 12, marginTop: 6 }} />
-            </label>
-          </>
-        )}
-
-        <button type="submit" disabled={loading} style={{ padding: 14, borderRadius: 12, border: 0, background: "#2563eb", color: "#fff" }}>
-          {loading ? "Please wait..." : onboardingOnly ? "Continue" : mode === "signin" ? "Sign in" : "Sign up"}
-        </button>
-      </form>
-
-      {!onboardingOnly && (
-        <div style={{ marginTop: 16 }}>
-          <button onClick={() => setMode(mode === "signin" ? "signup" : "signin")} style={{ border: 0, background: "transparent", color: "#2563eb" }}>
-            {mode === "signin" ? "Need an account? Sign up" : "Already have an account? Sign in"}
-          </button>
+    <div className="auth-wrap">
+      <div className="auth-card">
+        <span className="badge">Role based onboarding</span>
+        <div className="page-header">
+          <div>
+            <h1>Worker and user login</h1>
+            <p>Select your role, sign in, and follow the guided flow for profile creation, hiring, job feed, and chat.</p>
+          </div>
         </div>
-      )}
+
+        <div className="auth-tabs">
+          <button className={`btn ${mode === "login" ? "primary" : "secondary"}`} onClick={() => setMode("login")}>Login</button>
+          <button className={`btn ${mode === "register" ? "primary" : "secondary"}`} onClick={() => setMode("register")}>Register</button>
+        </div>
+
+        <form onSubmit={submit} className="list">
+          <div className="field">
+            <label>Role</label>
+            <div className="role-toggle">
+              <button type="button" className={`btn ${role === "worker" ? "primary active" : "secondary"}`} onClick={() => setRole("worker")}>Worker</button>
+              <button type="button" className={`btn ${role === "user" ? "primary active" : "secondary"}`} onClick={() => setRole("user")}>User</button>
+            </div>
+          </div>
+
+          <div className="form-grid">
+            <div className="field">
+              <label>Full name</label>
+              <input className="input" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Full name" />
+            </div>
+            <div className="field">
+              <label>Email</label>
+              <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" required />
+            </div>
+          </div>
+
+          <div className="field">
+            <label>Password</label>
+            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required />
+          </div>
+
+          <button className="btn primary full" disabled={loading}>{loading ? "Please wait..." : mode === "login" ? "Login" : "Create account"}</button>
+        </form>
+      </div>
     </div>
   );
 }

@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     SMTP_PASS: str
     SMTP_FROM: str
 
-    APP_NAME: str = "JobConnect API"
+    APP_NAME: str = "Rozgar API"
     UPLOAD_DIR: str = "uploads"
 
     DEEPFACE_MODEL: str = "Facenet"
@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     DEEPFACE_DETECTOR_BACKEND: str = "opencv"
     DEEPFACE_THRESHOLD: float = 0.68
 
-    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
+    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

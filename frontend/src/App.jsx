@@ -1,46 +1,40 @@
+import React from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import { useAuthCtx } from "./context/AuthContext";
 import AuthPage from "./pages/AuthPage";
 import FaceAuthPage from "./pages/FaceAuthPage";
-import WorkerFeedPage from "./pages/WorkerFeedPage";
-import UserHomePage from "./pages/UserHomePage";
-import JobRoomPage from "./pages/JobRoomPage";
 import WorkerProfilePage from "./pages/WorkerProfilePage";
+import UserProfilePage from "./pages/UserProfilePage";
+import UserHomePage from "./pages/UserHomePage";
 import UserSearchWorkersPage from "./pages/UserSearchWorkersPage";
+import WorkerDetailPage from "./pages/WorkerDetailPage";
+import WorkerFeedPage from "./pages/WorkerFeedPage";
+import JobRoomPage from "./pages/JobRoomPage";
+import { getStoredProfile, getStoredUser } from "./lib/api";
 
-function HomeRedirect() {
-  const { loading, session, profile } = useAuthCtx();
-
-  if (loading) return <div style={{ padding: 40 }}>Loading...</div>;
-  if (!session) return <AuthPage />;
-
-  if (!profile) return <Navigate to="/onboarding" replace />;
-  if (profile.role === "worker" && !profile.face_registered) return <Navigate to="/face-auth" replace />;
-  if (profile.role === "worker" && !profile.skills?.length) return <Navigate to="/worker/profile" replace />;
-  if (profile.role === "worker") return <Navigate to="/worker/feed" replace />;
-  if (profile.role === "user") return <Navigate to="/user/home" replace />;
-  return <AuthPage />;
+function RequireAuth({ children }) {
+  const user = getStoredUser();
+  return user ? children : <Navigate to="/auth" replace />;
 }
 
-function Protected({ children }) {
-  const { session, loading } = useAuthCtx();
-  if (loading) return <div style={{ padding: 40 }}>Loading...</div>;
-  if (!session) return <Navigate to="/" replace />;
-  return children;
+function RequireRole({ role, children }) {
+  const profile = getStoredProfile();
+  if (!profile) return <Navigate to="/auth" replace />;
+  return profile.role === role ? children : <Navigate to={profile.role === "worker" ? "/worker/feed" : "/user/home"} replace />;
 }
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/worker/profile" element={<WorkerProfilePage />} />
-      <Route path="/workers/search" element={<UserSearchWorkersPage />} />  
-      <Route path="/" element={<HomeRedirect />} />
-      <Route path="/onboarding" element={<Protected><AuthPage onboardingOnly /></Protected>} />
-      <Route path="/face-auth" element={<Protected><FaceAuthPage /></Protected>} />
-      <Route path="/worker/profile" element={<Protected><WorkerProfilePage /></Protected>} />
-      <Route path="/worker/feed" element={<Protected><WorkerFeedPage /></Protected>} />
-      <Route path="/user/home" element={<Protected><UserHomePage /></Protected>} />
-      <Route path="/jobs/:jobId" element={<Protected><JobRoomPage /></Protected>} />
+      <Route path="/" element={<Navigate to="/auth" replace />} />
+      <Route path="/auth" element={<AuthPage />} />
+      <Route path="/worker/face" element={<RequireAuth><RequireRole role="worker"><FaceAuthPage /></RequireRole></RequireAuth>} />
+      <Route path="/worker/profile" element={<RequireAuth><RequireRole role="worker"><WorkerProfilePage /></RequireRole></RequireAuth>} />
+      <Route path="/user/profile" element={<RequireAuth><RequireRole role="user"><UserProfilePage /></RequireRole></RequireAuth>} />
+      <Route path="/user/home" element={<RequireAuth><RequireRole role="user"><UserHomePage /></RequireRole></RequireAuth>} />
+      <Route path="/search" element={<RequireAuth><RequireRole role="user"><UserSearchWorkersPage /></RequireRole></RequireAuth>} />
+      <Route path="/workers/:workerId" element={<RequireAuth><WorkerDetailPage /></RequireAuth>} />
+      <Route path="/worker/feed" element={<RequireAuth><RequireRole role="worker"><WorkerFeedPage /></RequireRole></RequireAuth>} />
+      <Route path="/jobs/:jobId" element={<RequireAuth><JobRoomPage /></RequireAuth>} />
     </Routes>
   );
 }

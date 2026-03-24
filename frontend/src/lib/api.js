@@ -1,35 +1,63 @@
-import { supabase } from "./supabase";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || `${window.location.protocol}//${window.location.hostname}:8000`;
 
-// Change this to your backend URL
-export const API_BASE = "http://127.0.0.1:8000";
+const TOKEN_KEY = "rozgar_access_token";
+const USER_KEY = "rozgar_user";
+const PROFILE_KEY = "rozgar_profile";
+
+export function getApiBaseUrl() {
+  return API_BASE_URL;
+}
+
+export function getAccessToken() {
+  return localStorage.getItem(TOKEN_KEY) || "";
+}
+
+export function getStoredUser() {
+  try { return JSON.parse(localStorage.getItem(USER_KEY) || "null"); } catch { return null; }
+}
+
+export function getStoredProfile() {
+  try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || "null"); } catch { return null; }
+}
+
+export function setSessionFromAuthResponse(data) {
+  if (data?.access_token) localStorage.setItem(TOKEN_KEY, data.access_token);
+  if (data?.user) localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+}
+
+export function saveMePayload(data) {
+  if (data?.user) localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+  if (data?.profile) localStorage.setItem(PROFILE_KEY, JSON.stringify(data.profile));
+}
+
+export function clearSession() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+  localStorage.removeItem(PROFILE_KEY);
+}
 
 export async function apiFetch(path, options = {}) {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  const headers = new Headers(options.headers || {});
+  const token = getAccessToken();
+  const isFormData = options.body instanceof FormData;
 
-  const token = session?.access_token;
+  if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
+  if (!isFormData && options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
 
-  const headers = {
-    ...(options.headers || {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  const contentType = response.headers.get("content-type") || "";
+  const payload = contentType.includes("application/json") ? await response.json() : await response.text();
 
-  if (!(options.body instanceof FormData)) {
-    headers["Content-Type"] = "application/json";
+  if (!response.ok) {
+    const message = typeof payload === "string" ? payload : payload?.detail || payload?.message || "Request failed";
+    throw new Error(message);
   }
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers,
-    body: options.body,
-  });
+  return payload;
+}
 
-  const data = await res.json().catch(() => ({}));
-
-  if (!res.ok) {
-    throw new Error(data.detail || "Request failed");
-  }
-
+export async function refreshMe() {
+  const data = await apiFetch("/me");
+  saveMePayload(data);
   return data;
 }

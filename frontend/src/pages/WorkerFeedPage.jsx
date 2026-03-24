@@ -1,3 +1,4 @@
+import React from "react";
 import { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import Layout from "../components/Layout";
@@ -16,7 +17,7 @@ export default function WorkerFeedPage() {
       setMatchedJobs(data.matched_open_jobs || []);
       setAssignedJobs(data.assigned_jobs || []);
     } catch (error) {
-      toast.error(error.message);
+      toast.error(error.message || "Failed to load job feed");
     }
   };
 
@@ -30,67 +31,65 @@ export default function WorkerFeedPage() {
     try {
       await apiFetch(`/jobs/${jobId}/accept`, { method: "POST" });
       toast.success("Job accepted");
-      load();
+      await load();
       navigate(`/jobs/${jobId}`);
     } catch (error) {
-      toast.error(error.message);
+      toast.error(error.message || "Unable to accept job");
     }
   };
 
   return (
     <Layout title="Worker Job Feed">
-      <div style={{ display: "grid", gap: 20 }}>
-        <Card title="Assigned jobs / active chats">
-          {!assignedJobs.length ? (
-            <p>No assigned jobs yet.</p>
-          ) : (
-            assignedJobs.map((job) => (
-              <div
-                key={job.id}
-                style={{
-                  padding: 16,
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 14,
-                  marginBottom: 12,
-                }}
-              >
-                <strong>{job.title}</strong>
-                <p>{job.description}</p>
-                <div style={{ color: "#6b7280", marginBottom: 10 }}>
-                  {job.skill} · {job.city || job.location} · {job.status}
+      <div className="page-header">
+        <div>
+          <span className="badge">Worker opportunity feed</span>
+          <h1>Assigned jobs and nearby matched work</h1>
+          <p>Review jobs that match your profile, accept the right one, and open the job room chat.</p>
+        </div>
+        <div className="summary-row">
+          <div className="stat-card"><span>Assigned</span><strong>{assignedJobs.length}</strong></div>
+          <div className="stat-card"><span>Matched</span><strong>{matchedJobs.length}</strong></div>
+        </div>
+      </div>
+
+      <div className="grid-2">
+        <Card>
+          <div className="list">
+            <h2>Assigned jobs / active chats</h2>
+            {assignedJobs.length ? assignedJobs.map((job) => (
+              <div key={job.id} className="item-card">
+                <div className="item-head">
+                  <div><h3>{job.title}</h3><p>{job.description}</p></div>
+                  <span className={`pill ${String(job.status || "assigned")}`}>{job.status || "assigned"}</span>
                 </div>
-                <button onClick={() => navigate(`/jobs/${job.id}`)}>Open chat</button>
+                <div className="chips">
+                  <span className="chip">{job.skill || "General"}</span>
+                  <span className="chip">{job.city || job.location || "Location not set"}</span>
+                </div>
+                <div className="btn-row" style={{ marginTop: 14 }}><button className="btn dark" onClick={() => navigate(`/jobs/${job.id}`)}>Open job room</button></div>
               </div>
-            ))
-          )}
+            )) : <div className="empty">No assigned jobs yet.</div>}
+          </div>
         </Card>
 
-        <Card title="Nearby matched jobs">
-          {!matchedJobs.length ? (
-            <p>No matched jobs yet.</p>
-          ) : (
-            matchedJobs.map((job) => (
-              <div
-                key={job.id}
-                style={{
-                  padding: 16,
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 14,
-                  marginBottom: 12,
-                }}
-              >
-                <strong>{job.title}</strong>
-                <p>{job.description}</p>
-                <div style={{ color: "#6b7280", marginBottom: 10 }}>
-                  {job.skill} · {job.city || job.location} · {job.urgency}
-                  {job.distance_km !== null && job.distance_km !== undefined
-                    ? ` · ${job.distance_km} km`
-                    : ""}
+        <Card>
+          <div className="list">
+            <h2>Nearby matched jobs</h2>
+            {matchedJobs.length ? matchedJobs.map((job) => (
+              <div key={job.id} className="item-card">
+                <div className="item-head">
+                  <div><h3>{job.title}</h3><p>{job.description}</p></div>
+                  <span className={`pill ${String(job.urgency || "normal")}`}>{job.urgency || "normal"}</span>
                 </div>
-                <button onClick={() => accept(job.id)}>Accept job</button>
+                <div className="chips">
+                  <span className="chip">{job.skill || "General"}</span>
+                  <span className="chip">{job.city || job.location || "Location not set"}</span>
+                  {job.distance_km !== null && job.distance_km !== undefined ? <span className="chip">{job.distance_km} km away</span> : null}
+                </div>
+                <div className="btn-row" style={{ marginTop: 14 }}><button className="btn primary" onClick={() => accept(job.id)}>Accept job</button></div>
               </div>
-            ))
-          )}
+            )) : <div className="empty">No matched jobs yet.</div>}
+          </div>
         </Card>
       </div>
     </Layout>

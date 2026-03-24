@@ -1,140 +1,173 @@
-import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
-import { io } from "socket.io-client";
+import React from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
+import { useParams } from "react-router-dom";
 import Layout from "../components/Layout";
 import Card from "../components/Card";
-import { API_BASE, apiFetch } from "../lib/api";
-import { useAuthCtx } from "../context/AuthContext";
+import { apiFetch, getAccessToken, getApiBaseUrl, getStoredProfile, getStoredUser } from "../lib/api";
 
 export default function JobRoomPage() {
   const { jobId } = useParams();
-  const { backendUser, profile } = useAuthCtx();
-
+  const profile = getStoredProfile();
+  const user = getStoredUser();
   const [job, setJob] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [roomId, setRoomId] = useState("");
-  const [message, setMessage] = useState("");
+  const [text, setText] = useState("");
   const [rating, setRating] = useState(5);
   const [review, setReview] = useState("");
+  const chatRef = useRef(null);
+  const wsRef = useRef(null);
 
-  const socket = useMemo(() => io(API_BASE), []);
+  const isUser = profile?.role === "user";
+  const canRate = isUser && job?.status === "completed" && job?.worker_id;
 
   const load = async () => {
     try {
-      const [jobRes, msgRes] = await Promise.all([
-        apiFetch(`/jobs/${jobId}`),
-        apiFetch(`/jobs/${jobId}/messages`),
-      ]);
-      setJob(jobRes.job);
-      setMessages(msgRes.messages || []);
-      setRoomId(msgRes.room_id);
+      const data = await apiFetch(`/jobs/${jobId}`);
+      setJob(data.job);
+      setMessages(data.messages || []);
     } catch (error) {
-      toast.error(error.message);
+      toast.error(error.message || "Failed to load job");
     }
   };
 
   useEffect(() => { load(); }, [jobId]);
 
   useEffect(() => {
-    if (!roomId) return;
-    socket.emit("join_room", { room: roomId });
-    socket.on("new_message", (payload) => {
-      if (payload.room === roomId) setMessages((prev) => [...prev, payload]);
-    });
-    return () => {
-      socket.off("new_message");
+    const token = getAccessToken();
+    if (!token) return;
+    const wsBase = getApiBaseUrl().replace(/^http/, "ws");
+    const ws = new WebSocket(`${wsBase}/ws/jobs/${jobId}?token=${encodeURIComponent(token)}`);
+    ws.onmessage = (event) => {
+      const payload = JSON.parse(event.data);
+      if (payload.type === "message") {
+        setMessages((prev) => [...prev, payload.data]);
+      }
     };
-  }, [roomId, socket]);
+    ws.onerror = () => {};
+    wsRef.current = ws;
+    return () => ws.close();
+  }, [jobId]);
 
-  const sendMessage = async () => {
-    if (!message.trim() || !backendUser) return;
-    socket.emit("send_message", {
-      room: roomId,
-      job_id: jobId,
-      sender_id: backendUser.id,
-      sender_name: profile?.full_name || backendUser.email,
-      message,
-      created_at: new Date().toISOString(),
-    });
-    setMessage("");
+  useEffect(() => {
+    if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
+  }, [messages]);
+
+  const statusPill = useMemo(() => String(job?.status || "pending").replaceAll(" ", "_"), [job?.status]);
+
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    if (!text.trim()) return;
+    const payload = { message: text.trim() };
+    setText("");
+    if (wsRef.current && wsRef.current.readyState === 1) {
+      wsRef.current.send(JSON.stringify(payload));
+      return;
+    }
+    try {
+      const res = await apiFetch(`/jobs/${jobId}/messages`, { method: "POST", body: JSON.stringify(payload) });
+      setMessages((prev) => [...prev, res.data]);
+    } catch (error) {
+      toast.error(error.message || "Failed to send message");
+    }
+  };
+
+  const startJob = async () => {
+    try {
+      await apiFetch(`/jobs/${jobId}/start`, { method: "POST" });
+      toast.success("Job started");
+      await load();
+    } catch (error) {
+      toast.error(error.message || "Unable to start job");
+    }
   };
 
   const completeJob = async () => {
     try {
       await apiFetch(`/jobs/${jobId}/complete`, { method: "POST" });
-      toast.success("Job completed");
+      toast.success("Job marked completed");
       await load();
     } catch (error) {
-      toast.error(error.message);
+      toast.error(error.message || "Unable to complete job");
     }
   };
 
-  const submitRating = async (e) => {
-    e.preventDefault();
+  const submitRating = async () => {
     try {
-      await apiFetch(`/jobs/${jobId}/rate`, {
+      await apiFetch("/ratings", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rating: Number(rating), review }),
+        body: JSON.stringify({ worker_id: job.worker_id, job_id: job.id, rating, review }),
       });
       toast.success("Rating submitted");
       await load();
     } catch (error) {
-      toast.error(error.message);
+      toast.error(error.message || "Unable to submit rating");
     }
   };
 
+  if (!job) {
+    return <Layout title="Job Room"><Card><div className="empty">Loading job room...</div></Card></Layout>;
+  }
+
   return (
     <Layout title="Job Room">
-      <div style={{ display: "grid", gridTemplateColumns: "1.1fr .9fr", gap: 20 }}>
-        <Card title={job?.title || "Job"}>
-          {job ? (
-            <>
-              <p>{job.description}</p>
-              <div style={{ color: "#6b7280", marginBottom: 12 }}>
-                {job.skill} · {job.location} · {job.status}
-              </div>
+      <div className="page-header">
+        <div>
+          <span className="badge">Job room</span>
+          <h1>{job.title}</h1>
+          <p>{job.description}</p>
+        </div>
+        <div className="summary-row">
+          <div className="stat-card"><span>Status</span><strong><span className={`pill ${statusPill}`}>{job.status || "pending"}</span></strong></div>
+          <div className="stat-card"><span>Skill</span><strong>{job.skill || "General"}</strong></div>
+          <div className="stat-card"><span>City</span><strong>{job.city || job.location || "-"}</strong></div>
+        </div>
+      </div>
 
-              <div style={{ border: "1px solid #e5e7eb", borderRadius: 14, padding: 14, minHeight: 320 }}>
-                {messages.map((m, idx) => (
-                  <div key={`${m.id || idx}-${m.created_at || idx}`} style={{ marginBottom: 10 }}>
-                    <strong>{m.sender_name || m.sender_id}</strong>
-                    <div>{m.message}</div>
+      <div className="grid-2">
+        <Card>
+          <div className="list">
+            <div className="chat-box" ref={chatRef}>
+              {messages.length ? messages.map((msg, idx) => {
+                const own = msg.sender_id === user?.id;
+                return (
+                  <div key={`${msg.created_at}-${idx}`} className={`message-row ${own ? "own" : "other"}`}>
+                    <div className="message-bubble">
+                      <div className="message-name">{msg.sender_name || "User"}</div>
+                      <div>{msg.message}</div>
+                      <div className="message-meta">{msg.created_at ? new Date(msg.created_at).toLocaleString() : "now"}</div>
+                    </div>
                   </div>
-                ))}
-              </div>
-
-              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                <input value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Type a message" style={{ flex: 1 }} />
-                <button onClick={sendMessage}>Send</button>
-              </div>
-            </>
-          ) : (
-            <p>Loading job...</p>
-          )}
+                );
+              }) : <div className="empty">No messages yet.</div>}
+            </div>
+            <form onSubmit={sendMessage} className="btn-row">
+              <input className="input" style={{ flex: 1 }} value={text} onChange={(e) => setText(e.target.value)} placeholder="Type a message" />
+              <button className="btn primary" type="submit">Send</button>
+            </form>
+          </div>
         </Card>
 
-        <Card title="Actions">
-          {profile?.role === "worker" && job?.status !== "completed" ? (
-            <button onClick={completeJob}>Mark work completed</button>
-          ) : null}
-
-          {profile?.role === "user" ? (
-            <form onSubmit={submitRating} style={{ display: "grid", gap: 10, marginTop: 16 }}>
-              <label>Rating
-                <select value={rating} onChange={(e) => setRating(e.target.value)} style={{ width: "100%", marginTop: 6 }}>
-                  <option value={5}>5</option>
-                  <option value={4}>4</option>
-                  <option value={3}>3</option>
-                  <option value={2}>2</option>
-                  <option value={1}>1</option>
-                </select>
-              </label>
-              <textarea value={review} onChange={(e) => setReview(e.target.value)} rows={4} placeholder="Review" />
-              <button type="submit">Submit rating</button>
-            </form>
-          ) : null}
+        <Card>
+          <div className="list">
+            <h2>Actions</h2>
+            <div className="kv">
+              <div><span>Job owner</span><strong>{job.user_id || "-"}</strong></div>
+              <div><span>Worker</span><strong>{job.worker_id || "Not assigned"}</strong></div>
+            </div>
+            <div className="btn-row">
+              {job.status === "assigned" || job.status === "in_progress" ? <button className="btn secondary" onClick={startJob}>Start work</button> : null}
+              {isUser && ["assigned", "in_progress"].includes(job.status) ? <button className="btn dark" onClick={completeJob}>Mark completed</button> : null}
+            </div>
+            {canRate ? (
+              <div className="list">
+                <h3>Rate worker</h3>
+                <div className="rating-stars">{[1,2,3,4,5].map((x) => <button key={x} type="button" className={rating === x ? "active" : ""} onClick={() => setRating(x)}>{x}★</button>)}</div>
+                <div className="field"><label>Review</label><textarea className="textarea" value={review} onChange={(e) => setReview(e.target.value)} placeholder="Write a review" /></div>
+                <button className="btn primary full" onClick={submitRating}>Submit rating</button>
+              </div>
+            ) : null}
+          </div>
         </Card>
       </div>
     </Layout>
