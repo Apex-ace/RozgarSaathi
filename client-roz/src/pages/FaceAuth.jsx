@@ -56,7 +56,10 @@ function FaceAuth() {
 
   useEffect(() => {
     startCamera();
-    return () => stopCamera();
+    return () => {
+      stopCamera();
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
   }, []);
 
   const capturePhoto = () => {
@@ -122,6 +125,43 @@ function FaceAuth() {
     }
   };
 
+  const registerFace = async () => {
+    if (!capturedBlob) {
+      toast.error("Capture photo first");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const token = await getToken();
+
+      const formData = new FormData();
+      formData.append("photo", capturedBlob, "face.jpg");
+
+      const res = await fetch(`${API_BASE}/register-face`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const data = await res.json();
+      console.log("/register-face response:", data);
+
+      if (!res.ok) {
+        throw new Error(data.detail || data.message || "Face registration failed");
+      }
+
+      toast.success("Face registered successfully");
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const verifyFace = async () => {
     if (!capturedBlob) {
       toast.error("Capture photo first");
@@ -167,7 +207,7 @@ function FaceAuth() {
     <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
       <div className="w-full max-w-5xl bg-white rounded-3xl shadow-xl p-8">
         <h1 className="text-3xl font-bold text-slate-900 mb-6">
-          Face Verification
+          Face Authentication
         </h1>
 
         <div className="grid md:grid-cols-2 gap-8">
@@ -194,6 +234,14 @@ function FaceAuth() {
                 className="px-4 py-2 rounded-xl bg-slate-700 text-white"
               >
                 Test /me
+              </button>
+
+              <button
+                onClick={registerFace}
+                disabled={loading}
+                className="px-4 py-2 rounded-xl bg-amber-600 text-white disabled:opacity-60"
+              >
+                {loading ? "Processing..." : "Register Face"}
               </button>
 
               <button
