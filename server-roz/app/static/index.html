@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>DeepFace + MediaPipe Demo</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 900px; margin: 30px auto; padding: 20px; }
+    input, button, textarea { display: block; margin: 10px 0; padding: 10px; width: 100%; max-width: 500px; }
+    video, canvas { border: 1px solid #ccc; margin-top: 10px; width: 400px; height: 300px; }
+    .row { margin-bottom: 28px; }
+    pre { background: #f4f4f4; padding: 12px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>FastAPI DeepFace + MediaPipe Demo</h1>
+
+  <div class="row">
+    <h2>Register</h2>
+    <input id="regEmail" type="email" placeholder="Email" />
+    <input id="regPassword" type="password" placeholder="Password" />
+    <button onclick="registerUser()">Register</button>
+  </div>
+
+  <div class="row">
+    <h2>Login</h2>
+    <input id="loginEmail" type="email" placeholder="Email" />
+    <input id="loginPassword" type="password" placeholder="Password" />
+    <button onclick="loginUser()">Login</button>
+  </div>
+
+  <div class="row">
+    <h2>Webcam</h2>
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" width="400" height="300" style="display:none;"></canvas>
+    <button onclick="startCamera()">Start Camera</button>
+    <button onclick="capturePhoto()">Capture Photo</button>
+  </div>
+
+  <div class="row">
+    <h2>Register Face</h2>
+    <button onclick="registerFace()">Register Face</button>
+  </div>
+
+  <div class="row">
+    <h2>Verify Face</h2>
+    <button onclick="verifyFace()">Verify Face</button>
+  </div>
+
+  <div class="row">
+    <h2>Verify Face and Send Mail</h2>
+    <input id="toEmail" type="email" placeholder="Send to email" />
+    <input id="subject" type="text" placeholder="Subject" />
+    <textarea id="message" placeholder="Message"></textarea>
+    <button onclick="verifyFaceAndSendMail()">Verify Face and Send Mail</button>
+  </div>
+
+  <h2>Response</h2>
+  <pre id="output"></pre>
+
+  <script>
+    let token = "";
+    let capturedBlob = null;
+
+    async function startCamera() {
+      const video = document.getElementById("video");
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+    }
+
+    function capturePhoto() {
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      canvas.toBlob((blob) => {
+        capturedBlob = blob;
+        showOutput({ success: true, message: "Photo captured" });
+      }, "image/jpeg", 0.95);
+    }
+
+    async function registerUser() {
+      const email = document.getElementById("regEmail").value;
+      const password = document.getElementById("regPassword").value;
+
+      const res = await fetch("/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
+
+      showOutput(await res.json());
+    }
+
+    async function loginUser() {
+      const email = document.getElementById("loginEmail").value;
+      const password = document.getElementById("loginPassword").value;
+
+      const res = await fetch("/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
+
+      const data = await res.json();
+      token = data.access_token || "";
+      showOutput(data);
+    }
+
+    async function registerFace() {
+      if (!token) return showOutput({ error: "Login first" });
+      if (!capturedBlob) return showOutput({ error: "Capture photo first" });
+
+      const formData = new FormData();
+      formData.append("photo", capturedBlob, "face.jpg");
+
+      const res = await fetch("/register-face", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData
+      });
+
+      showOutput(await res.json());
+    }
+
+    async function verifyFace() {
+      if (!token) return showOutput({ error: "Login first" });
+      if (!capturedBlob) return showOutput({ error: "Capture photo first" });
+
+      const formData = new FormData();
+      formData.append("photo", capturedBlob, "face.jpg");
+
+      const res = await fetch("/verify-face", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData
+      });
+
+      showOutput(await res.json());
+    }
+
+    async function verifyFaceAndSendMail() {
+      if (!token) return showOutput({ error: "Login first" });
+      if (!capturedBlob) return showOutput({ error: "Capture photo first" });
+
+      const toEmail = document.getElementById("toEmail").value;
+      const subject = document.getElementById("subject").value;
+      const message = document.getElementById("message").value;
+
+      const formData = new FormData();
+      formData.append("photo", capturedBlob, "face.jpg");
+      formData.append("to_email", toEmail);
+      formData.append("subject", subject);
+      formData.append("message", message);
+
+      const res = await fetch("/verify-face-and-send-mail", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData
+      });
+
+      showOutput(await res.json());
+    }
+
+    function showOutput(data) {
+      document.getElementById("output").textContent = JSON.stringify(data, null, 2);
+    }
+  </script>
+</body>
+</html>
