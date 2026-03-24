@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+httpx
+python-multipart
+pydantic-settings
+deepface
+opencv-python
+numpy
+python-socketio[asgi]
