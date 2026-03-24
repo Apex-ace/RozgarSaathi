@@ -124,16 +124,40 @@ async def job_feed(current_user: dict = Depends(get_current_user)):
     skills = [s.lower() for s in (profile.get("skills") or [])]
     location = (profile.get("location") or "").lower()
 
-    rows = await select_rows("jobs", {"select": "*", "status": "eq.open", "order": "created_at.desc"})
-    jobs = []
-    for row in rows:
-        if skills and row.get("skill", "").lower() not in skills:
-            continue
-        if location and row.get("location", "").lower() != location:
-            continue
-        jobs.append(row)
-    return {"jobs": jobs}
+    open_rows = await select_rows(
+        "jobs",
+        {"select": "*", "status": "eq.open", "order": "created_at.desc"}
+    )
 
+    matched_open_jobs = []
+    for row in open_rows:
+        job_skill = (row.get("skill") or "").lower()
+        job_location = (row.get("location") or "").lower()
+
+        skill_match = not skills or job_skill in skills
+        location_match = not location or job_location == location
+
+        if skill_match and location_match:
+            matched_open_jobs.append(row)
+
+    assigned_jobs = await select_rows(
+        "jobs",
+        {
+            "select": "*",
+            "worker_id": f"eq.{current_user['id']}",
+            "order": "created_at.desc",
+        },
+    )
+
+    active_assigned_jobs = [
+        row for row in assigned_jobs
+        if row.get("status") in ["assigned", "completed"]
+    ]
+
+    return {
+        "matched_open_jobs": matched_open_jobs,
+        "assigned_jobs": active_assigned_jobs,
+    }
 
 @fastapi_app.post("/jobs/{job_id}/accept")
 async def accept_job(job_id: str, current_user: dict = Depends(get_current_user)):
