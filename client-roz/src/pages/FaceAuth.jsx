@@ -1,21 +1,32 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
+import { supabase } from "../supabase";
 
 function FaceAuth() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const streamRef = useRef(null);
 
-  const [cameraOn, setCameraOn] = useState(false);
   const [capturedBlob, setCapturedBlob] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
-  const [toEmail, setToEmail] = useState("");
-  const [subject, setSubject] = useState("");
-  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const streamRef = useRef(null);
   const API_BASE = "http://127.0.0.1:8000";
 
-  const getToken = () => localStorage.getItem("access_token");
+  const getToken = async () => {
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession();
+
+    if (error) throw new Error(error.message);
+    if (!session?.access_token) {
+      throw new Error("No active session found. Please sign in again.");
+    }
+
+    localStorage.setItem("access_token", session.access_token);
+    return session.access_token;
+  };
 
   const startCamera = async () => {
     try {
@@ -23,11 +34,15 @@ function FaceAuth() {
         video: true,
         audio: false,
       });
+
       streamRef.current = stream;
-      videoRef.current.srcObject = stream;
-      setCameraOn(true);
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+
       toast.success("Camera started");
-    } catch (error) {
+    } catch {
       toast.error("Unable to access camera");
     }
   };
@@ -35,15 +50,28 @@ function FaceAuth() {
   const stopCamera = () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
     }
-    setCameraOn(false);
   };
+
+  useEffect(() => {
+    startCamera();
+    return () => stopCamera();
+  }, []);
 
   const capturePhoto = () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
 
-    if (!video) return;
+    if (!video || !canvas) {
+      toast.error("Camera not ready");
+      return;
+    }
+
+    if (!video.videoWidth || !video.videoHeight) {
+      toast.error("Video not ready yet");
+      return;
+    }
 
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
@@ -51,56 +79,77 @@ function FaceAuth() {
     const ctx = canvas.getContext("2d");
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    canvas.toBlob((blob) => {
-      setCapturedBlob(blob);
-      const url = URL.createObjectURL(blob);
-      setPreviewUrl(url);
-      toast.success("Photo captured");
-    }, "image/jpeg", 0.95);
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          toast.error("Failed to capture image");
+          return;
+        }
+
+        setCapturedBlob(blob);
+
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        setPreviewUrl(URL.createObjectURL(blob));
+
+        toast.success("Photo captured");
+      },
+      "image/jpeg",
+      0.95
+    );
   };
 
-  const registerFace = async () => {
-    if (!capturedBlob) return toast.error("Capture photo first");
-
-    const formData = new FormData();
-    formData.append("photo", capturedBlob, "face.jpg");
-
+  const testMe = async () => {
     try {
-      const res = await fetch(`${API_BASE}/register-face`, {
-        method: "POST",
+      const token = await getToken();
+
+      const res = await fetch(`${API_BASE}/me`, {
+        method: "GET",
         headers: {
-          Authorization: `Bearer ${getToken()}`,
+          Authorization: `Bearer ${token}`,
         },
-        body: formData,
       });
 
       const data = await res.json();
+      console.log("/me response:", data);
 
-      if (!res.ok) throw new Error(data.detail || data.message);
-      toast.success(data.message || "Face registered");
+      if (!res.ok) {
+        throw new Error(data.detail || "Auth failed");
+      }
+
+      toast.success(`Authenticated: ${data?.user?.email || "user"}`);
     } catch (error) {
       toast.error(error.message);
     }
   };
 
   const verifyFace = async () => {
-    if (!capturedBlob) return toast.error("Capture photo first");
+    if (!capturedBlob) {
+      toast.error("Capture photo first");
+      return;
+    }
 
-    const formData = new FormData();
-    formData.append("photo", capturedBlob, "face.jpg");
+    setLoading(true);
 
     try {
+      const token = await getToken();
+
+      const formData = new FormData();
+      formData.append("photo", capturedBlob, "face.jpg");
+
       const res = await fetch(`${API_BASE}/verify-face`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${getToken()}`,
+          Authorization: `Bearer ${token}`,
         },
         body: formData,
       });
 
       const data = await res.json();
+      console.log("/verify-face response:", data);
 
-      if (!res.ok) throw new Error(data.detail || data.message);
+      if (!res.ok) {
+        throw new Error(data.detail || data.message || "Face verification failed");
+      }
 
       if (data.matched) {
         toast.success("Face verified successfully");
@@ -109,46 +158,16 @@ function FaceAuth() {
       }
     } catch (error) {
       toast.error(error.message);
-    }
-  };
-
-  const verifyFaceAndSendMail = async () => {
-    if (!capturedBlob) return toast.error("Capture photo first");
-
-    const formData = new FormData();
-    formData.append("photo", capturedBlob, "face.jpg");
-    formData.append("to_email", toEmail);
-    formData.append("subject", subject);
-    formData.append("message", message);
-
-    try {
-      const res = await fetch(`${API_BASE}/verify-face-and-send-mail`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${getToken()}`,
-        },
-        body: formData,
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) throw new Error(data.detail || data.message);
-
-      if (data.success) {
-        toast.success(data.message || "Mail sent");
-      } else {
-        toast.error(data.message || "Verification failed");
-      }
-    } catch (error) {
-      toast.error(error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 p-6">
-      <div className="max-w-5xl mx-auto bg-white rounded-3xl shadow-xl p-8">
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-6">
+      <div className="w-full max-w-5xl bg-white rounded-3xl shadow-xl p-8">
         <h1 className="text-3xl font-bold text-slate-900 mb-6">
-          Face Authentication
+          Face Verification
         </h1>
 
         <div className="grid md:grid-cols-2 gap-8">
@@ -157,84 +176,48 @@ function FaceAuth() {
               ref={videoRef}
               autoPlay
               playsInline
+              muted
               className="w-full rounded-2xl bg-black"
             />
             <canvas ref={canvasRef} className="hidden" />
 
             <div className="flex gap-3 mt-4 flex-wrap">
               <button
-                onClick={startCamera}
-                className="px-4 py-2 rounded-xl bg-teal-600 text-white"
-              >
-                Start Camera
-              </button>
-              <button
-                onClick={stopCamera}
-                className="px-4 py-2 rounded-xl bg-slate-600 text-white"
-              >
-                Stop Camera
-              </button>
-              <button
                 onClick={capturePhoto}
                 className="px-4 py-2 rounded-xl bg-blue-600 text-white"
               >
-                Capture Photo
+                Capture
+              </button>
+
+              <button
+                onClick={testMe}
+                className="px-4 py-2 rounded-xl bg-slate-700 text-white"
+              >
+                Test /me
+              </button>
+
+              <button
+                onClick={verifyFace}
+                disabled={loading}
+                className="px-4 py-2 rounded-xl bg-violet-600 text-white disabled:opacity-60"
+              >
+                {loading ? "Verifying..." : "Verify Face"}
               </button>
             </div>
           </div>
 
           <div>
-            {previewUrl && (
+            {previewUrl ? (
               <img
                 src={previewUrl}
                 alt="Captured preview"
                 className="w-full rounded-2xl border"
               />
+            ) : (
+              <div className="w-full h-full min-h-[320px] rounded-2xl border border-dashed border-slate-300 flex items-center justify-center text-slate-400">
+                Captured image preview
+              </div>
             )}
-
-            <div className="flex gap-3 mt-4 flex-wrap">
-              <button
-                onClick={registerFace}
-                className="px-4 py-2 rounded-xl bg-emerald-600 text-white"
-              >
-                Register Face
-              </button>
-              <button
-                onClick={verifyFace}
-                className="px-4 py-2 rounded-xl bg-violet-600 text-white"
-              >
-                Verify Face
-              </button>
-            </div>
-
-            <div className="mt-6 space-y-4">
-              <input
-                type="email"
-                placeholder="Receiver email"
-                value={toEmail}
-                onChange={(e) => setToEmail(e.target.value)}
-                className="w-full rounded-xl border px-4 py-3"
-              />
-              <input
-                type="text"
-                placeholder="Subject"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                className="w-full rounded-xl border px-4 py-3"
-              />
-              <textarea
-                placeholder="Message"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                className="w-full rounded-xl border px-4 py-3 min-h-[120px]"
-              />
-              <button
-                onClick={verifyFaceAndSendMail}
-                className="w-full px-4 py-3 rounded-xl bg-rose-600 text-white"
-              >
-                Verify Face and Send Mail
-              </button>
-            </div>
           </div>
         </div>
       </div>

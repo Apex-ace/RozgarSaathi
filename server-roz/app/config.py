@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     SMTP_PASS: str
     SMTP_FROM: str
 
-    APP_NAME: str = "FastAPI DeepFace MediaPipe API"
+    APP_NAME: str = "FastAPI DeepFace API"
     UPLOAD_DIR: str = "uploads"
 
     DEEPFACE_MODEL: str = "Facenet"

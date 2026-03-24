@@ -1,15 +1,11 @@
 import os
 import uuid
 import cv2
-import mediapipe as mp
 from fastapi import HTTPException, status
 from deepface import DeepFace
 
 from app.config import settings
 from app.storage import load_face_db, save_face_db
-
-
-mp_face_detection = mp.solutions.face_detection
 
 
 def ensure_upload_dir() -> None:
@@ -41,55 +37,62 @@ def load_bgr_image(path: str):
     return image
 
 
-def mediapipe_single_face_check(image_path: str) -> dict:
-    image_bgr = load_bgr_image(image_path)
-    image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-    h, w = image_bgr.shape[:2]
+def single_face_check(image_path: str) -> dict:
+    """
+    Uses DeepFace.extract_faces with OpenCV backend.
+    This replaces MediaPipe entirely.
+    """
+    try:
+        faces = DeepFace.extract_faces(
+            img_path=image_path,
+            detector_backend=settings.DEEPFACE_DETECTOR_BACKEND,
+            enforce_detection=True,
+            align=True,
+            anti_spoofing=False,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"No face detected: {str(exc)}",
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Face detection failed: {str(exc)}",
+        )
 
-    with mp_face_detection.FaceDetection(
-        model_selection=0,
-        min_detection_confidence=0.6
-    ) as face_detection:
-        results = face_detection.process(image_rgb)
-
-    detections = results.detections if results and results.detections else []
-    if len(detections) == 0:
+    if not faces or len(faces) == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No face detected in image",
         )
-    if len(detections) > 1:
+
+    if len(faces) > 1:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Multiple faces detected. Use an image with one face only",
         )
 
-    bbox = detections[0].location_data.relative_bounding_box
-    box_w = max(0.0, bbox.width) * w
-    box_h = max(0.0, bbox.height) * h
-    area_ratio = (box_w * box_h) / float(w * h)
-
-    if area_ratio < 0.05:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Face is too small in the image. Move closer to the camera",
-        )
-
     return {
         "faces": 1,
-        "face_area_ratio": round(area_ratio, 4),
+        "detector_backend": settings.DEEPFACE_DETECTOR_BACKEND,
     }
 
 
-def register_face_for_user(user_id: str, email: str, image_bytes: bytes, filename: str | None = None) -> dict:
+def register_face_for_user(
+    user_id: str,
+    email: str,
+    image_bytes: bytes,
+    filename: str | None = None,
+) -> dict:
     saved_path = save_upload_file_bytes(image_bytes, filename)
-    mp_info = mediapipe_single_face_check(saved_path)
+    face_info = single_face_check(saved_path)
 
     db = load_face_db()
     db[user_id] = {
         "email": email,
         "image_path": saved_path,
-        "mediapipe": mp_info,
+        "face_info": face_info,
     }
     save_face_db(db)
 
@@ -97,11 +100,15 @@ def register_face_for_user(user_id: str, email: str, image_bytes: bytes, filenam
         "user_id": user_id,
         "email": email,
         "image_path": saved_path,
-        "mediapipe": mp_info,
+        "face_info": face_info,
     }
 
 
-def verify_face_for_user(user_id: str, image_bytes: bytes, filename: str | None = None) -> dict:
+def verify_face_for_user(
+    user_id: str,
+    image_bytes: bytes,
+    filename: str | None = None,
+) -> dict:
     db = load_face_db()
     if user_id not in db:
         raise HTTPException(
@@ -110,7 +117,7 @@ def verify_face_for_user(user_id: str, image_bytes: bytes, filename: str | None 
         )
 
     live_path = save_upload_file_bytes(image_bytes, filename or "live.jpg")
-    mediapipe_single_face_check(live_path)
+    single_face_check(live_path)
 
     registered_path = db[user_id]["image_path"]
 
@@ -124,13 +131,18 @@ def verify_face_for_user(user_id: str, image_bytes: bytes, filename: str | None 
             threshold=settings.DEEPFACE_THRESHOLD,
             enforce_detection=True,
             align=True,
-            anti_spoofing=True,
+            anti_spoofing=False,
             silent=True,
         )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Face verification failed: {str(exc)}",
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Verification error: {str(exc)}",
         )
 
     return {

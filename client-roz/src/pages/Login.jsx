@@ -1,12 +1,15 @@
 import React, { useState } from "react";
 import { supabase } from "../supabase";
 import { toast } from "react-hot-toast";
+import { useNavigate } from "react-router-dom";
 
 function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
+
+  const navigate = useNavigate();
 
   const handleAuth = async (e) => {
     e.preventDefault();
@@ -20,14 +23,38 @@ function Login() {
         password,
       });
       error = signUpError;
-      if (!error) toast.success("Account created successfully!");
+
+      if (!error) {
+        toast.success("Account created successfully!");
+      }
     } else {
-      const { error: signInError } =
+      const { data, error: signInError } =
         await supabase.auth.signInWithPassword({
           email,
           password,
         });
+
       error = signInError;
+
+      if (!error) {
+        const session = data?.session;
+        const user = data?.user;
+
+        if (session?.access_token) {
+          localStorage.setItem("access_token", session.access_token);
+        }
+
+        if (session?.refresh_token) {
+          localStorage.setItem("refresh_token", session.refresh_token);
+        }
+
+        if (user) {
+          localStorage.setItem("user", JSON.stringify(user));
+        }
+
+        toast.success("Login successful!");
+        navigate("/face-auth");
+      }
     }
 
     if (error) toast.error(error.message);
@@ -37,8 +64,6 @@ function Login() {
   return (
     <div className="min-h-screen bg-[#F6F7FB] flex items-center justify-center p-6">
       <div className="w-full max-w-5xl bg-white rounded-3xl shadow-xl overflow-hidden flex flex-col md:flex-row">
-
-        {/* LEFT SIDE */}
         <div className="md:w-1/2 bg-teal-50 p-10 flex flex-col justify-center">
           <h1 className="text-3xl font-extrabold text-slate-900">
             Expense Tracker
@@ -54,7 +79,6 @@ function Login() {
           </ul>
         </div>
 
-        {/* RIGHT SIDE */}
         <div className="md:w-1/2 p-10">
           <h2 className="text-2xl font-bold text-slate-900 mb-6">
             {isSignUp ? "Create Account" : "Welcome Back"}
