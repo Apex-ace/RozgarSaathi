@@ -22,7 +22,6 @@ export default function WorkerFeedPage() {
 
   useEffect(() => {
     load();
-
     const timer = setInterval(load, 5000);
     return () => clearInterval(timer);
   }, []);
@@ -58,11 +57,9 @@ export default function WorkerFeedPage() {
                 <strong>{job.title}</strong>
                 <p>{job.description}</p>
                 <div style={{ color: "#6b7280", marginBottom: 10 }}>
-                  {job.skill} · {job.location} · {job.status}
+                  {job.skill} · {job.city || job.location} · {job.status}
                 </div>
-                <button onClick={() => navigate(`/jobs/${job.id}`)}>
-                  Open chat
-                </button>
+                <button onClick={() => navigate(`/jobs/${job.id}`)}>Open chat</button>
               </div>
             ))
           )}
@@ -85,7 +82,10 @@ export default function WorkerFeedPage() {
                 <strong>{job.title}</strong>
                 <p>{job.description}</p>
                 <div style={{ color: "#6b7280", marginBottom: 10 }}>
-                  {job.skill} · {job.location} · {job.urgency}
+                  {job.skill} · {job.city || job.location} · {job.urgency}
+                  {job.distance_km !== null && job.distance_km !== undefined
+                    ? ` · ${job.distance_km} km`
+                    : ""}
                 </div>
                 <button onClick={() => accept(job.id)}>Accept job</button>
               </div>

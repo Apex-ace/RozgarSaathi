@@ -1,44 +1,43 @@
-from typing import Literal
-
-from pydantic import BaseModel, EmailStr, Field
-
-
-Role = Literal["worker", "user"]
+from typing import Optional, List
+from pydantic import BaseModel
 
 
-class ProfileUpsert(BaseModel):
-    role: Role
-    full_name: str = ""
-    location: str = ""
-    availability: str = "available"
-    status: str = "offline"
-    skills: list[str] = Field(default_factory=list)
+class WorkerLocationUpdate(BaseModel):
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    address_text: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    is_location_live: bool = False
+    service_radius_km: int = 5
+    availability_status: str = "available"
+
+
+class WorkerProfileUpdate(BaseModel):
+    skills: List[str] = []
+    location: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    address_text: Optional[str] = None
+    is_location_live: bool = False
+    service_radius_km: int = 5
+    availability_status: str = "available"
     experience_years: int = 0
-    bio: str = ""
+    hourly_rate: float = 0.0
 
 
-class JobCreate(BaseModel):
-    title: str
-    description: str = ""
-    skill: str
-    location: str
-    urgency: str = "normal"
-
-
-class JobAssign(BaseModel):
-    worker_id: str
-
-
-class MessageCreate(BaseModel):
-    message: str
-
-
-class RatingCreate(BaseModel):
-    rating: int = Field(ge=1, le=5)
-    review: str = ""
-
-
-class MailRequest(BaseModel):
-    to: EmailStr
-    subject: str
-    body: str
+class UserSearchWorkersQuery(BaseModel):
+    skill: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    radius_km: int = 10
+    city: Optional[str] = None
+    availability_status: Optional[str] = None
+    min_rating: Optional[float] = None
+    min_trust_score: Optional[float] = None
+    min_experience: Optional[int] = None
+    face_verified: Optional[bool] = None
+    max_hourly_rate: Optional[float] = None
+    sort_by: Optional[str] = "nearest"

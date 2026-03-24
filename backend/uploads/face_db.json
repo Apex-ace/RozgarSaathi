@@ -1,0 +1,10 @@
+{
+  "15356055-1c50-4e57-b154-52b8ba7a9dfb": {
+    "email": "ayushmishra.pc@gmail.com",
+    "image_path": "uploads\\827a16c613d64c0fb10a9fe8c03bbcee.jpg",
+    "face_info": {
+      "faces": 1,
+      "detector_backend": "opencv"
+    }
+  }
+}

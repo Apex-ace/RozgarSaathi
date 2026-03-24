@@ -2,10 +2,11 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuthCtx } from "./context/AuthContext";
 import AuthPage from "./pages/AuthPage";
 import FaceAuthPage from "./pages/FaceAuthPage";
-import WorkerProfilePage from "./pages/WorkerProfilePage";
 import WorkerFeedPage from "./pages/WorkerFeedPage";
 import UserHomePage from "./pages/UserHomePage";
 import JobRoomPage from "./pages/JobRoomPage";
+import WorkerProfilePage from "./pages/WorkerProfilePage";
+import UserSearchWorkersPage from "./pages/UserSearchWorkersPage";
 
 function HomeRedirect() {
   const { loading, session, profile } = useAuthCtx();
@@ -31,6 +32,8 @@ function Protected({ children }) {
 export default function App() {
   return (
     <Routes>
+      <Route path="/worker/profile" element={<WorkerProfilePage />} />
+      <Route path="/workers/search" element={<UserSearchWorkersPage />} />  
       <Route path="/" element={<HomeRedirect />} />
       <Route path="/onboarding" element={<Protected><AuthPage onboardingOnly /></Protected>} />
       <Route path="/face-auth" element={<Protected><FaceAuthPage /></Protected>} />
