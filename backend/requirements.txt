@@ -3,7 +3,13 @@ uvicorn[standard]
 httpx
 python-multipart
 pydantic-settings
-deepface
+
 opencv-python
 numpy
-python-socketio[asgi]
+
+# socket
+python-socketio
+
+# AI (fixed versions)
+deepface==0.0.79
+tensorflow==2.15.0
